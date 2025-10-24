@@ -1,0 +1,24 @@
+{
+  "originHash" : "95afd406e27b67916712b0ff790e4782015dd2021724cac93acef673f3848a61",
+  "pins" : [
+    {
+      "identity" : "zbitboard",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/zobiejrz/zBitboard",
+      "state" : {
+        "revision" : "71c5329544c29200554d67c2b967be92b6b0c0d4",
+        "version" : "0.3.0"
+      }
+    },
+    {
+      "identity" : "zchesskit",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/zobiejrz/zChessKit",
+      "state" : {
+        "revision" : "337750112a957bf79b567b746083077ce95513ff",
+        "version" : "1.0.0"
+      }
+    }
+  ],
+  "version" : 3
+}
