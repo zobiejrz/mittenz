@@ -248,17 +248,19 @@ final class SearchController {
             let m1Score: Int
             let m2Score: Int
             
-            if m1.isCapture, let captured = m1.capturedPieceType, let attacker = m1.pieceType {
-                m1Score = (position.evaluator?.pieceValues[captured] ?? 0) * 10 - (position.evaluator?.pieceValues[attacker] ?? 0)
-            } else if m1.isPromotion {
+            if let captured = m1.capturedPiece {
+                let attacker = m1.piece
+                m1Score = (evaluator.pieceValues[captured]! * 10) - (evaluator.pieceValues[attacker]!)
+            } else if m1.promotion != nil {
                 m1Score = 900 // high value for promotions
             } else {
                 m1Score = 0
             }
             
-            if m2.isCapture, let captured = m2.capturedPieceType, let attacker = m2.pieceType {
-                m2Score = (position.evaluator?.pieceValues[captured] ?? 0) * 10 - (position.evaluator?.pieceValues[attacker] ?? 0)
-            } else if m2.isPromotion {
+            if let captured = m2.capturedPiece {
+                let attacker = m2.piece
+                m2Score = (evaluator.pieceValues[captured]! * 10) - (evaluator.pieceValues[attacker]!)
+            } else if m2.promotion != nil {
                 m2Score = 900
             } else {
                 m2Score = 0
