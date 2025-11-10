@@ -89,7 +89,7 @@ public final class UCILoop {
     // MARK: - Go Parsing
     private func parseGo(tokens: [Substring]) {
         var timeLimit: TimeLimit = .infinite
-        var skill: SkillSetting? = nil
+        let skill: SkillSetting = SkillSetting(maxCentipawnLoss: 0)
         
         var idx = 0
         while idx < tokens.count {

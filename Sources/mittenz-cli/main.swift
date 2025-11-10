@@ -21,14 +21,14 @@ func selfPlayDemo(engine: Engine, moveLimit: Int = 100, timePerMove: Int = 500) 
     while movesPlayed < moveLimit {
         // Check for terminal state
         if game.getGameResult() != .ongoing {
-            print("Game ended: \(game.getGameResult() == .checkmate ? "Checkmate" : "Stalemate")")
+            print("Game ended: \([.whiteWon, .blackWon].contains(game.getGameResult()) ? "Checkmate" : "Stalemate")")
             break
         }
         
         // Engine searches best move
         let bestMove = engine.searchBestMove(
             timeLimit: .byMillis(timePerMove),
-            skill: nil // you could vary skill for weaker/stronger players
+            skill: SkillSetting(maxCentipawnLoss: 0) // you could vary skill for weaker/stronger players
         )!
         
         // Apply move
@@ -36,7 +36,7 @@ func selfPlayDemo(engine: Engine, moveLimit: Int = 100, timePerMove: Int = 500) 
         game.makeUCIMove(bestMove.uci)
         movesPlayed += 1
         
-        print("Move \(movesPlayed) (\(engine.currentState().playerToMove == .white ? "White" : "Black")): \(bestMove.uci)")
+        print("Move \(movesPlayed) (\(engine.currentState().playerToMove == .white ? "White" : "Black"), \(engine.evaluate(position: bestMove.resultingBoardState, depth: 1))): \(bestMove.uci)")
     }
     
     // Final FEN after self-play
@@ -50,6 +50,6 @@ func selfPlayDemo(engine: Engine, moveLimit: Int = 100, timePerMove: Int = 500) 
 // Create engine config
 let config = EngineConfig() // fill in defaults if needed
 let engine = Engine(config: config)
-//selfPlayDemo(engine: engine, timePerMove: 5000)
+selfPlayDemo(engine: engine, moveLimit: 100, timePerMove: 2000)
 
-UCILoop(engine: engine).run()
+//UCILoop(engine: engine).run()

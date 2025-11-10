@@ -1,5 +1,5 @@
 {
-  "originHash" : "95afd406e27b67916712b0ff790e4782015dd2021724cac93acef673f3848a61",
+  "originHash" : "a4f21a3c34c7e8fd12b8c61de201d2df35bb63fd1a3f67351db6605ff12df23f",
   "pins" : [
     {
       "identity" : "zbitboard",
@@ -15,8 +15,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/zobiejrz/zChessKit",
       "state" : {
-        "revision" : "337750112a957bf79b567b746083077ce95513ff",
-        "version" : "1.0.0"
+        "branch" : "simplify",
+        "revision" : "339b7e27cd752d0df062b4ac88c530a6abcc7785"
       }
     }
   ],

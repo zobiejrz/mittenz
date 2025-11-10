@@ -14,7 +14,9 @@ let package = Package(
         .executable(name: "mittenz-cli", targets: ["mittenz-cli"]),
     ],
     dependencies: [
-        .package(url: "https://github.com/zobiejrz/zChessKit", exact: "1.0.0"),
+//        .package(url: "https://github.com/zobiejrz/zChessKit", exact: "1.0.0"),
+//        .package(url: "https://github.com/zobiejrz/zChessKit", branch: "main"),
+        .package(url: "https://github.com/zobiejrz/zChessKit", branch: "simplify"),
     ],
     targets: [
         // Targets are the basic building blocks of a package, defining a module or a test suite.

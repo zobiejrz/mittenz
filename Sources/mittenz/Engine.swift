@@ -26,7 +26,7 @@ public final class Engine {
         self.threads = config.threads
         let board = BoardState.fromFEN(config.startFEN) ?? BoardState.startingPosition()
         self.board = board
-        self.evaluator = Evaluator(useNNUE: config.useNNUE)
+        self.evaluator = Evaluator()
         self.search = SearchController(
             board: board,
             evaluator: evaluator
@@ -55,23 +55,20 @@ public final class Engine {
     public func searchBestMove(timeLimit: TimeLimit, skill: SkillSetting? = nil) -> Move? {
         resetStopFlag()
         let skillSetting = skill ?? SkillSetting(maxCentipawnLoss: 0)
-        let controller = SearchController(board: board, evaluator: self.evaluator)
-        if let move = controller.bestMove(
-            timeLimit: timeLimit,
-            skill: skillSetting,
-        ) {
-            // Apply move to internal board state
-            board = move.resultingBoardState
-            return move
-        } else {
-            return nil
-        }
+        let move = self.search.bestMove(
+            timeLimit: timeLimit
+        )
+        
+        // Apply move to internal board state
+        board = move.resultingBoardState
+        self.search.setBoard(move.resultingBoardState)
+        return move
     }
     
     // MARK: - Evaluation
     
     public func evaluate(position: BoardState, depth: Int = 0) -> Int {
-        return evaluator.evaluate(position: position, depth: depth)
+        return evaluator.evaluate(position: position)
     }
     
     // MARK: - Perft (Movegen Accuracy Test)
