@@ -35,7 +35,27 @@ final class Evaluator {
         let material = materialBalance(position: position)
         let pieceSquareScore = evaluatePieceSquares(position: position)
         
-        return material + pieceSquareScore
+        var seePenalty = 0
+        
+        // Iterate over all squares to check if any pieces are attacked
+        for sq in Square.allCases {
+            guard let piece = position.whatPieceIsOn(sq) else { continue }
+            let color = position.whitePieces.hasPiece(on: sq) ? PlayerColor.white : .black
+            
+            let oppositeColor = color == .white ? PlayerColor.black : .white
+            let attackers = position.attackersTo(sq, color: oppositeColor, occupancy: position.allPieces)
+            if attackers == .empty { continue }
+            
+            // Compute SEE: net gain/loss for the piece if captured
+            let see = staticExchangeEval(square: sq, position: position, targetPiece: piece, targetColor: color)
+            
+            // Penalize negative SEE (losing material) only
+            if see < 0 {
+                seePenalty += colorMultiplier(for: color) * see
+            }
+        }
+        
+        return material + pieceSquareScore + seePenalty
     }
     
     // MARK: - Static Exchange Evaluation
@@ -121,15 +141,14 @@ final class Evaluator {
     // MARK: - Phase Factor (ratio of opening/end game)
     private func phaseFactor(position: BoardState) -> Double {
         let maxPhase = pieceValues[.knight]! + pieceValues[.bishop]! + pieceValues[.rook]! + pieceValues[.queen]! // Total max non-pawn
-        let currentPhase = 0
-        var totalCurrent = 0
         
+        var totalCurrent = 0
         totalCurrent += pieceValues[.knight]! * (position.blackKnights | position.whiteKnights).nonzeroBitCount
         totalCurrent += pieceValues[.bishop]! * (position.blackBishops | position.whiteBishops).nonzeroBitCount
         totalCurrent += pieceValues[.rook]! * (position.blackRooks | position.whiteRooks).nonzeroBitCount
         totalCurrent += pieceValues[.queen]! * (position.blackQueens | position.whiteQueens).nonzeroBitCount
         
-        // Clamp ratio to [0,1]
+        // Compute ratio: 0 = opening, 1 = endgame
         let ratio = 1.0 - min(Double(totalCurrent) / Double(maxPhase), 1.0)
         return ratio
     }
