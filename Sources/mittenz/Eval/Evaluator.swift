@@ -31,6 +31,22 @@ final class Evaluator {
     
     // MARK: - Static evaluation
     private func evaluateStatic(position: BoardState) -> Int {
+        // Terminal conditions
+        let moves = position.generateAllLegalMoves()
+        
+        if moves.isEmpty {
+            if position.isKingInCheck() {
+                // Checkmate: losing side has no legal moves and is in check
+                // Sign is from White’s perspective, so if it’s White to move and mated → huge negative
+                let mateScore = pieceValues[.king]!  // same order as King value
+                let sign = -1 * colorMultiplier(for: position.playerToMove)
+                return sign * mateScore
+            } else {
+                // Stalemate = draw
+                return 0
+            }
+        }
+        
         // Material + piece-square evaluation, from White's perspective
         let material = materialBalance(position: position)
         let pieceSquareScore = evaluatePieceSquares(position: position)
