@@ -133,7 +133,7 @@ struct PieceSquareTable {
         // Linear blend between opening and endgame scores
         let openVal = openTable[idx]
         let endVal = endTable[idx]
-        let blended = Double(openVal) * (1.0 - ratio) + Double(endVal) * ratio
+        let blended = (Double(openVal) * (1.0 - ratio)) + (Double(endVal) * (ratio))
         
         return Int(blended.rounded())
     }

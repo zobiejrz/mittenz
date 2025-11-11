@@ -66,7 +66,7 @@ final class Evaluator {
             let see = staticExchangeEval(square: sq, position: position, targetPiece: piece, targetColor: color)
             
             // Penalize negative SEE (losing material) only
-            if see < 0 {
+            if colorMultiplier(for: color) * see < 0 {
                 seePenalty += colorMultiplier(for: color) * see
             }
         }
