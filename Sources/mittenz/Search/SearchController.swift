@@ -289,9 +289,9 @@ final class SearchController {
         for move in moves {
             // Optional: use SEE to skip bad captures
             if let targetPiece = move.capturedPiece {
-                let targetColor = move.resultingBoardState.whitePieces.hasPiece(on: move.to) ? PlayerColor.black : .white
+                let targetColor: PlayerColor = move.resultingBoardState.whitePieces.hasPiece(on: move.to) ? .black : .white
                 let see = evaluator.staticExchangeEval(square: move.to, position: position, targetPiece: targetPiece, targetColor: targetColor)
-                if see < 0 { // MARK: This is a place I may need to adjust the sign for each player, I'm not sure
+                if see < 0 && !move.resultingBoardState.isKingInCheck() {
                     continue // Skip obviously losing captures
                 }
             }

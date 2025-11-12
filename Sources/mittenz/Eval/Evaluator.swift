@@ -82,34 +82,42 @@ final class Evaluator {
         var gains: [Int] = []
         
         // Start with the target piece being captured
-        gains.append(pieceValues[targetPiece] ?? 0)
+        gains.append(pieceValues[targetPiece]!)
         
         // Side to move for the simulation (the attacker)
-        var side: PlayerColor = targetColor == .white ? .black : .white  // The initial attacker is opposite the target
+        var attackerSide: PlayerColor = targetColor == .white ? .black : .white  // The initial attacker is opposite the target
         
         while true {
+            // Pre-check: are there attackers for the next side?
+            let nextAttackers = position.attackersTo(square, color: attackerSide == .white ? .black : .white, occupancy: occ)
+            guard let (_, _) = position.leastValuedAttacker(from: nextAttackers, color: attackerSide) else {
+                break  // No more attackers; end of sequence
+            }
+            
             // Get all attackers to the square for the current side
-            let attackers = position.attackersTo(square, color: side, occupancy: occ)
+            let attackers = position.attackersTo(square, color: attackerSide, occupancy: occ)
             
             // Find the least valuable attacker
-            guard let (attackerPiece, attackerSquare) = position.leastValuedAttacker(from: attackers, color: side) else {
+            guard let (attackerPiece, attackerSquare) = position.leastValuedAttacker(from: attackers, color: attackerSide) else {
                 break  // No more attackers; end of sequence
             }
             
             // Compute gain for this capture
-            let gain = (pieceValues[attackerPiece] ?? 0) - (gains.last ?? 0)
+            let gain = pieceValues[attackerPiece]! - gains.last!
             gains.append(gain)
             
             // Remove the attacker from the occupancy bitboard
             occ &= ~Bitboard.squareMask(attackerSquare)
             
             // Swap sides
-            side = side == .white ? .black : .white
+            attackerSide = attackerSide == .white ? .black : .white
         }
         
         // Now propagate the minimum gains backwards to account for optimal defense
+//        print("\(gains)")
         for i in (1..<gains.count).reversed() {
-            gains[i - 1] = -max(-gains[i - 1], gains[i])
+//            print("-max(-\(gains[i-1]), \(gains[i])) = \(-max(-gains[i-1], gains[i]))")
+            gains[i - 1] = -max(-gains[i-1], gains[i])
         }
         
         // Return net gain for initial attacker
