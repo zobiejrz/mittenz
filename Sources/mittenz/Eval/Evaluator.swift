@@ -63,12 +63,10 @@ final class Evaluator {
             if attackers == .empty { continue }
             
             // Compute SEE: net gain/loss for the piece if captured
+            let multiplier = position.playerToMove == oppositeColor ? 1 : -1
             let see = staticExchangeEval(square: sq, position: position, targetPiece: piece, targetColor: color)
             
-            // Penalize negative SEE (losing material) only
-            if colorMultiplier(for: color) * see < 0 {
-                seePenalty += colorMultiplier(for: color) * see
-            }
+            seePenalty += multiplier * see
         }
         
         return material + pieceSquareScore + seePenalty
@@ -82,18 +80,12 @@ final class Evaluator {
         var gains: [Int] = []
         
         // Start with the target piece being captured
-        gains.append(pieceValues[targetPiece]!)
+        var currentCapturedPieceValue = pieceValues[targetPiece]!
         
         // Side to move for the simulation (the attacker)
         var attackerSide: PlayerColor = targetColor == .white ? .black : .white  // The initial attacker is opposite the target
         
         while true {
-            // Pre-check: are there attackers for the next side?
-            let nextAttackers = position.attackersTo(square, color: attackerSide == .white ? .black : .white, occupancy: occ)
-            guard let (_, _) = position.leastValuedAttacker(from: nextAttackers, color: attackerSide) else {
-                break  // No more attackers; end of sequence
-            }
-            
             // Get all attackers to the square for the current side
             let attackers = position.attackersTo(square, color: attackerSide, occupancy: occ)
             
@@ -102,9 +94,11 @@ final class Evaluator {
                 break  // No more attackers; end of sequence
             }
             
-            // Compute gain for this capture
-            let gain = pieceValues[attackerPiece]! - gains.last!
-            gains.append(gain)
+            // Capture the current piece
+            gains.append(currentCapturedPieceValue)
+            
+            // The next piece to be caputered is the current attacker
+            currentCapturedPieceValue = pieceValues[attackerPiece]!
             
             // Remove the attacker from the occupancy bitboard
             occ &= ~Bitboard.squareMask(attackerSquare)
@@ -113,15 +107,19 @@ final class Evaluator {
             attackerSide = attackerSide == .white ? .black : .white
         }
         
-        // Now propagate the minimum gains backwards to account for optimal defense
-//        print("\(gains)")
-        for i in (1..<gains.count).reversed() {
-//            print("-max(-\(gains[i-1]), \(gains[i])) = \(-max(-gains[i-1], gains[i]))")
-            gains[i - 1] = -max(-gains[i-1], gains[i])
+        if gains.isEmpty {
+            return 0
+        }
+        
+        var score = 0
+        
+        // Now propagate the minimum gains backwards to account for optimal defense and opt-out propagation
+        for i in (0..<gains.count).reversed() {
+            score = max(0, gains[i] - score)
         }
         
         // Return net gain for initial attacker
-        return gains.first ?? 0
+         return score //(targetColor == .white) ? -score : score
     }
     
     // MARK: - Piece-square table evaluation
@@ -135,8 +133,8 @@ final class Evaluator {
         for sq in Square.allCases {
             guard let piece = position.whatPieceIsOn(sq) else { continue }
             let color = position.whitePieces.hasPiece(on: sq) ? PlayerColor.white : .black
-            let multiplier = colorMultiplier(for: color)
-            
+            let multiplier = position.playerToMove == color ? 1 : -1
+
             let value = PieceSquareTable.read(piece: piece, square: sq, isWhite: color == .white, ratio: phase)
             score += multiplier * value
 
@@ -153,7 +151,7 @@ final class Evaluator {
         for sq in Square.allCases {
             guard let piece = position.whatPieceIsOn(sq) else { continue }
             let color = position.whitePieces.hasPiece(on: sq) ? PlayerColor.white : .black
-            let multiplier = colorMultiplier(for: color)
+            let multiplier = position.playerToMove == color ? 1 : -1
             
             let value = pieceValues[piece]!
             score += multiplier * value

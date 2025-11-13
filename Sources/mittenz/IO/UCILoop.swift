@@ -82,7 +82,7 @@ public final class UCILoop {
         
         engine?.setFEN(fen)
         for move in moves {
-            engine?.makeMoveFromUCI(move) // you need to implement this in Engine
+            engine?.makeMoveFromUCI(move)
         }
     }
     

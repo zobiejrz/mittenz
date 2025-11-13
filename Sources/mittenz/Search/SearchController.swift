@@ -42,7 +42,7 @@ final class SearchController {
         case .byDepth(let d):
             maxDepth = d
         default:
-            maxDepth = 10 // heuristic low default for debugging
+            maxDepth = 60
         }
         
         var repetitionHistory: Set<UInt64> = []
@@ -59,7 +59,7 @@ final class SearchController {
             var bestScore = Int.min
             
             let moves = orderMoves(board.generateAllLegalMoves(), position: board)
-
+            
             for move in moves {
                 if stop { break }
                 
@@ -118,8 +118,7 @@ final class SearchController {
         let key = zobrist.hash(position)
         if repetitionHistory.contains(key) {
             // Threefold repetition draw or repetition avoidance
-            let sign = position.playerToMove == .white ? -1 : 1
-            return sign * 15
+            return -15
         }
         
         repetitionHistory.insert(key)
@@ -128,23 +127,20 @@ final class SearchController {
         // 1. Time + checkmate check
         if stop { return 0 }
         
-        // Checkmate or stalemate detection
-        let moves = position.generateAllLegalMoves()
-        if moves.isEmpty {
-            if position.isKingInCheck() {
-                // Checkmate: losing side has no legal moves and is in check
-                // Sign is from White’s perspective, so if it’s White to move and mated → huge negative
-                let mateScore = evaluator.pieceValues[.king]! - (maxDepth - depth)
-                let sign = position.playerToMove == .white ? -1 : 1
-                return sign * mateScore
-            } else {
-                // Stalemate = draw
-                return 0
-            }
+        // Hard Limit Check
+        let currentRecursionDepth = maxDepth - depth
+        if currentRecursionDepth >= 60 {
+//            print("hit a depth limit")
+//            print(position.boardString())
+            // If we hit the absolute safety limit, treat this node as a leaf
+            // and return the quiescence search result (or static evaluation).
+            return quiescence(position: position, alpha: alpha, beta: beta)
         }
         
         // 2. Transposition table lookup
+        let ttMove: Move?
         if let ttEntry = transpositionTable.probe(key), ttEntry.depth >= depth {
+            ttMove = ttEntry.bestMove
             switch ttEntry.flag {
             case .exact:
                 return ttEntry.value
@@ -153,16 +149,16 @@ final class SearchController {
             case .lowerBound:
                 return max(alpha, ttEntry.value)
             }
+        } else {
+            ttMove = nil
         }
         
         // 3. Leaf node: evaluate statically if depth == 0
         if depth == 0 {
-            if position.isKingInCheck() {
+            if !position.isKingInCheck() {
                 // Check extension, force one more ply to resolve checks
-                var history = repetitionHistory
-                return -alphaBeta(position: position, depth: 2, alpha: -beta, beta: -alpha, repetitionHistory: &history)
+                return quiescence(position: position, alpha: alpha, beta: beta)
             }
-            return quiescence(position: position, alpha: alpha, beta: beta)
         }
         
         var alphaVar = alpha
@@ -170,6 +166,8 @@ final class SearchController {
         var bestMove: Move? = nil
         
         // 4. Generate all legal moves
+        // Also Checkmate or stalemate detection
+        let moves = position.generateAllLegalMoves()
         if moves.isEmpty {
             // Checkmate or stalemate
             // Evaluate accordingly: typically +MATE/-MATE or 0 for stalemate
@@ -183,8 +181,14 @@ final class SearchController {
         }
         
         let orderedMoves = moves.sorted { m1, m2 in
-            if m1.capturedPiece != m2.capturedPiece {
+            if m1 == ttMove {
+                return true
+            } else if m2 == ttMove {
+                return false
+            } else if m1.capturedPiece != m2.capturedPiece { // Pick the move that captures
                 return m1.capturedPiece != nil && m2.capturedPiece == nil
+            } else if m1.capturedPiece != nil && m2.capturedPiece != nil { // MVV-LVA
+                return (evaluator.pieceValues[m1.capturedPiece!]! * 10) - (evaluator.pieceValues[m1.piece]!) > (evaluator.pieceValues[m2.capturedPiece!]! * 10) - (evaluator.pieceValues[m2.piece]!)
             } else if m1.resultingBoardState.isKingInCheck() != m2.resultingBoardState.isKingInCheck() {
                 return m1.resultingBoardState.isKingInCheck() && !m2.resultingBoardState.isKingInCheck()
             } else {
@@ -212,7 +216,6 @@ final class SearchController {
                 break
             }
             
-            // Optional: stop flag checked periodically for long move lists
             if stop { break }
         }
         
@@ -228,14 +231,14 @@ final class SearchController {
         
         transpositionTable.store(key, value: bestValue, depth: depth, flag: flag, bestMove: bestMove)
         
-        let valueRet: Int
-        if abs(bestValue) >= 60000 {
-            // Distance-to-mate correction so deeper mates appear slightly worse
-            let sign = bestValue > 0 ? 1 : -1
-            valueRet = (60000 - (maxDepth - depth)) * sign
-        } else {
-            valueRet = bestValue
-        }
+//        let valueRet: Int
+//        if abs(bestValue) >= 60000 {
+//            // Distance-to-mate correction so deeper mates appear slightly worse
+//            let sign = bestValue > 0 ? 1 : -1
+//            valueRet = (60000 - (maxDepth - depth)) * sign
+//        } else {
+//            valueRet = bestValue
+//        }
         return bestValue
     }
     
@@ -260,8 +263,7 @@ final class SearchController {
                 // Checkmate: losing side has no legal moves and is in check
                 // Sign is from White’s perspective, so if it’s White to move and mated → huge negative
                 let mateScore = evaluator.pieceValues[.king]!
-                let sign = position.playerToMove == .white ? -1 : 1
-                return sign * mateScore
+                return -mateScore
             } else {
                 // Stalemate = draw
                 return 0
@@ -281,17 +283,22 @@ final class SearchController {
         
         // 2. Generate captures only
         let moves = allmoves.filter {
-            $0.capturedPiece != nil || $0.promotion != nil || $0.resultingBoardState.isKingInCheck()
+            $0.capturedPiece != nil || $0.promotion != nil || position.isKingInCheck()
         }
 
         
         // 3. Iterate over captures
         for move in moves {
-            // Optional: use SEE to skip bad captures
+            if stop { break } // Stop search if flagged
+            // Use SEE to skip bad captures
             if let targetPiece = move.capturedPiece {
                 let targetColor: PlayerColor = move.resultingBoardState.whitePieces.hasPiece(on: move.to) ? .black : .white
                 let see = evaluator.staticExchangeEval(square: move.to, position: position, targetPiece: targetPiece, targetColor: targetColor)
-                if see < 0 && !move.resultingBoardState.isKingInCheck() {
+                
+                let perspective = position.playerToMove == .white ? 1 : -1
+                let seeFromCurrentPlayer = see * perspective
+                
+                if seeFromCurrentPlayer < 0 && !move.resultingBoardState.isKingInCheck() {
                     continue // Skip obviously losing captures
                 }
             }
@@ -307,7 +314,6 @@ final class SearchController {
                 alphaVar = score
             }
             
-            if stop { break } // Stop search if flagged
         }
         
         return alphaVar
@@ -317,9 +323,14 @@ final class SearchController {
         return x == Int.min ? Int.max : -x
     }
     
-    private func orderMoves(_ moves: [Move], position: BoardState) -> [Move] {
+    private func orderMoves(_ moves: [Move], position: BoardState, pvMove: Move? = nil) -> [Move] {
         let key = zobrist.hash(position)
-        let ttBestMove = transpositionTable.probe(key)?.bestMove
+        let ttBestMove: Move?
+        if pvMove != nil {
+            ttBestMove = pvMove
+        } else {
+            ttBestMove = transpositionTable.probe(key)?.bestMove
+        }
         
         return moves.sorted { m1, m2 in
             // 1. TT move first
