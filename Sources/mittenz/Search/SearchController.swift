@@ -58,7 +58,7 @@ final class SearchController {
             var beta = Int.max
             var bestScore = Int.min
             
-            let moves = orderMoves(board.generateAllLegalMoves(), position: board)
+            let moves = orderMoves(board.generateAllLegalMoves(), position: board, pvMove: currentBestMove)
             
             for move in moves {
                 if stop { break }
@@ -170,14 +170,14 @@ final class SearchController {
         let moves = position.generateAllLegalMoves()
         if moves.isEmpty {
             // Checkmate or stalemate
-            // Evaluate accordingly: typically +MATE/-MATE or 0 for stalemate
-            var eval = evaluator.evaluate(position: position)
-            if abs(eval) >= 60000 {
+            if position.isKingInCheck() {
                 // Distance-to-mate correction so deeper mates appear slightly worse
-                let sign = eval > 0 ? 1 : -1
-                eval = (60000 - (maxDepth - depth)) * sign
+                let mateScore = evaluator.pieceValues[.king]!
+                let adjustedScore = mateScore - (maxDepth - depth)
+                return -adjustedScore
+            } else {
+                return 0
             }
-            return eval
         }
         
         let orderedMoves = moves.sorted { m1, m2 in
@@ -254,18 +254,22 @@ final class SearchController {
         }
     }
     
-    private func quiescence(position: BoardState, alpha: Int, beta: Int) -> Int {
+    private func quiescence(position: BoardState, alpha: Int, beta: Int, qdepth: Int = 8) -> Int {
         if stop { return 0 }
+        if qdepth <= 0 {
+            // Return static evaluation when depth limit is reached
+            return evaluator.evaluate(position: position)
+        }
         
         let allmoves = position.generateAllLegalMoves()
         if allmoves.isEmpty {
+            // Checkmate or stalemate
             if position.isKingInCheck() {
-                // Checkmate: losing side has no legal moves and is in check
-                // Sign is from White’s perspective, so if it’s White to move and mated → huge negative
+                // Distance-to-mate correction so deeper mates appear slightly worse
                 let mateScore = evaluator.pieceValues[.king]!
-                return -mateScore
+                let adjustedScore = mateScore //- (maxDepth - depth)
+                return -adjustedScore
             } else {
-                // Stalemate = draw
                 return 0
             }
         }
@@ -284,27 +288,19 @@ final class SearchController {
         // 2. Generate captures only
         let moves = allmoves.filter {
             $0.capturedPiece != nil || $0.promotion != nil || position.isKingInCheck()
+        }.sorted { m1, m2 in
+            let score1 = getQuiescenceMoveScore(m1, position: position)
+            let score2 = getQuiescenceMoveScore(m2, position: position)
+            return score1 > score2
         }
 
         
         // 3. Iterate over captures
         for move in moves {
             if stop { break } // Stop search if flagged
-            // Use SEE to skip bad captures
-            if let targetPiece = move.capturedPiece {
-                let targetColor: PlayerColor = move.resultingBoardState.whitePieces.hasPiece(on: move.to) ? .black : .white
-                let see = evaluator.staticExchangeEval(square: move.to, position: position, targetPiece: targetPiece, targetColor: targetColor)
-                
-                let perspective = position.playerToMove == .white ? 1 : -1
-                let seeFromCurrentPlayer = see * perspective
-                
-                if seeFromCurrentPlayer < 0 && !move.resultingBoardState.isKingInCheck() {
-                    continue // Skip obviously losing captures
-                }
-            }
             
             let childPosition = move.resultingBoardState
-            let score = -quiescence(position: childPosition, alpha: -beta, beta: -alphaVar)
+            let score = -quiescence(position: childPosition, alpha: -beta, beta: -alphaVar, qdepth: qdepth-1)
             
             if score >= beta {
                 return beta // Beta cutoff
@@ -361,5 +357,42 @@ final class SearchController {
             
             return m1Score > m2Score
         }
+    }
+    
+    // Helper function to score moves for QSearch ordering
+    private func getQuiescenceMoveScore(_ move: Move, position: BoardState) -> Int {
+        if let targetPiece = move.capturedPiece {
+            // 1. CAPTURE SCORE (Prioritize by SEE)
+            let targetColor: PlayerColor = position.whitePieces.hasPiece(on: move.to) ? .black : .white
+            let see = evaluator.staticExchangeEval(square: move.to, position: position, targetPiece: targetPiece, targetColor: targetColor)
+            
+            let perspective = position.playerToMove == .white ? 1 : -1
+            let seeFromCurrentPlayer = see * perspective
+            
+            if seeFromCurrentPlayer > 0 {
+                // Winning Captures: Highest Priority (Score > 10000)
+                return 10000 + seeFromCurrentPlayer
+            } else {
+                // Even or Losing Captures: Low Priority (Score < 0)
+                // Use SEE to order blunders among themselves, but keep them below quiet moves.
+                return -10000 + seeFromCurrentPlayer
+            }
+        }
+        
+        if let promotedPiece = move.promotion {
+            // 2. PROMOTION SCORE (Score 1000 to 9999)
+            // Highly prioritize promotion, especially to Queen.
+            return evaluator.pieceValues[promotedPiece]! * 10
+        }
+        
+        // 3. QUIET CHECK RESOLUTION MOVES (Score 0)
+        // These include any non-capture move required to get out of check.
+        if position.isKingInCheck() {
+            return 0 // Neutral priority
+        }
+        
+        // This should generally not be reached in the filtered list unless it's a quiet move
+        // filtered in only because of the 'isKingInCheck()' condition.
+        return -20000 // Lowest priority
     }
 }

@@ -33,8 +33,13 @@ extension BoardState {
                 piece = .queen
                 square = Square(rawValue: idx)!
             } else if let (idx, _) = (attackersBB & self.whiteKing).popLSB() {
-                piece = .king
-                square = Square(rawValue: idx)!
+                if attackersBB & ~self.whiteKing == .empty {
+                    piece = .king
+                    square = Square(rawValue: idx)!
+                } else {
+                    piece = nil
+                    square = nil
+                }
             } else {
                 piece = nil
                 square = nil
@@ -56,8 +61,13 @@ extension BoardState {
                 piece = .queen
                 square = Square(rawValue: idx)!
             } else if let (idx, _) = (attackersBB & self.blackKing).popLSB() {
-                piece = .king
-                square = Square(rawValue: idx)!
+                if attackersBB & ~self.blackKing == .empty {
+                    piece = .king
+                    square = Square(rawValue: idx)!
+                } else {
+                    piece = nil
+                    square = nil
+                }
             } else {
                 piece = nil
                 square = nil
