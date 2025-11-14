@@ -36,8 +36,6 @@ final class SearchController {
         startTime = Date()
         stop = false
         
-        var bestMoveSoFar: Move? = nil
-        
         switch timeLimit {
         case .byDepth(let d):
             maxDepth = d
@@ -50,44 +48,97 @@ final class SearchController {
         repetitionHistory.insert(rootKey)
         
         // Iterative deepening
+        var bestScore = Int.min
+        var currentBestMove: Move? = nil
+        var bestMoveSoFar: Move? = nil
+        
+        if board.plyNumber == 113 {
+            print(board.boardString())
+        }
+
         for depth in 1...maxDepth {
             if stop { break }
             
-            var currentBestMove: Move? = nil
-            var alpha = Int.min
-            var beta = Int.max
-            var bestScore = Int.min
+            // Aspiration Window Setup
+            var searchAgain = true
+            var currentAlpha = Int.min
+            var currentBeta = Int.max
+            let window = 50
             
-            let moves = orderMoves(board.generateAllLegalMoves(), position: board, pvMove: currentBestMove)
+            if bestScore != Int.min {
+                // Use results from previous, successfully completed depth
+                currentAlpha = bestScore - window
+                currentBeta = bestScore + window
+            }
             
-            for move in moves {
-                if stop { break }
+            while searchAgain {
+                searchAgain = false // assume success on current attempt
                 
-                let childPosition = move.resultingBoardState
-                let score = safeNegate(
-                    alphaBeta(
-                        position: childPosition,
-                        depth: depth - 1,
-                        alpha: safeNegate(beta),
-                        beta: safeNegate(alpha),
-                        repetitionHistory: &repetitionHistory
+                let moves = orderMoves(board.generateAllLegalMoves(), position: board, pvMove: currentBestMove)
+                
+                var depthBestScore = Int.min
+                var depthCurrentBestMove: Move? = nil
+                
+                for move in moves {
+                    if stop { break }
+                    
+                    let childPosition = move.resultingBoardState
+                    let score = safeNegate(
+                        alphaBeta(
+                            position: childPosition,
+                            depth: depth - 1,
+                            alpha: safeNegate(currentBeta),
+                            beta: safeNegate(currentAlpha),
+                            repetitionHistory: &repetitionHistory
+                        )
                     )
-                )
-
-                
-                if score > bestScore {
-                    bestScore = score
-                    currentBestMove = move
+                    
+                    
+                    if score > depthBestScore {
+                        depthBestScore = score
+                        depthCurrentBestMove = move
+                    }
+                    
+                    if score > currentAlpha {
+                        currentAlpha = score
+                    }
+                    
+                    if score >= currentBeta {
+                        // Fail-High: Score is above the upper bound. Window was too small.
+                        // This is a valuable move but we need to check if we must research.
+                        break // Beta Cutoff (Move ordering has been effective)
+                    }
+                    
+                    if timeExpired(timeLimit: timeLimit) {
+                        stop = true
+                        break
+                    }
                 }
                 
-                if score > alpha {
-                    alpha = score
+                if !stop {
+                    if depthBestScore <= currentAlpha {
+                        // Fail Low: The true score is less than the expected lower bound.
+                        // We must re-search with the full minimum alpha.
+                        if currentAlpha > Int.min {
+                            currentBeta = Int.max
+                            currentAlpha = Int.min
+                            searchAgain = true
+                        }
+                    } else if depthBestScore >= currentBeta && currentBeta < Int.max {
+                        // Fail High: The true score is higher than the expected upper bound.
+                        // We must re-search with the full maximum beta.
+                        currentAlpha = Int.min
+                        currentBeta = Int.max
+                        searchAgain = true
+                    }
                 }
                 
-                // Stop if time expired
-                if timeExpired(timeLimit: timeLimit) {
-                    stop = true
-                    break
+                // Only update persistent results if the search was NOT a window failure
+                if !searchAgain {
+                    // Update persistent variables with results from this successful depth
+                    bestScore = depthBestScore
+                    currentBestMove = depthCurrentBestMove
+                    bestMoveSoFar = depthCurrentBestMove
                 }
             }
             
@@ -114,6 +165,35 @@ final class SearchController {
         beta: Int,
         repetitionHistory: inout Set<UInt64>
     ) -> Int {
+        // Time + checkmate check
+        if stop { return 0 }
+        
+        // Hard Limit Check
+        let currentRecursionDepth = maxDepth - depth
+        if currentRecursionDepth >= 60 {
+//            print("hit a depth limit")
+//            print(position.boardString())
+            // If we hit the absolute safety limit, treat this node as a leaf
+            // and return the quiescence search result (or static evaluation).
+            return quiescence(position: position, alpha: alpha, beta: beta, repetitionHistory: &repetitionHistory)
+        }
+        
+        // Generate all legal moves
+        // Also Checkmate or stalemate detection
+        let moves = position.generateAllLegalMoves()
+        if moves.isEmpty {
+            // Checkmate or stalemate
+            print ("EMPTY CHECK")
+            if position.isKingInCheck() {
+                // Distance-to-mate correction so deeper mates appear slightly worse
+                let mateScore = evaluator.pieceValues[.king]!
+                let adjustedScore = mateScore - (maxDepth - depth)
+                return -adjustedScore
+            } else {
+                return -15
+            }
+        }
+        
         // detect/prevent repetition
         let key = zobrist.hash(position)
         if repetitionHistory.contains(key) {
@@ -124,20 +204,7 @@ final class SearchController {
         repetitionHistory.insert(key)
         defer { repetitionHistory.remove(key) }
         
-        // 1. Time + checkmate check
-        if stop { return 0 }
-        
-        // Hard Limit Check
-        let currentRecursionDepth = maxDepth - depth
-        if currentRecursionDepth >= 60 {
-//            print("hit a depth limit")
-//            print(position.boardString())
-            // If we hit the absolute safety limit, treat this node as a leaf
-            // and return the quiescence search result (or static evaluation).
-            return quiescence(position: position, alpha: alpha, beta: beta)
-        }
-        
-        // 2. Transposition table lookup
+        // Transposition table lookup
         let ttMove: Move?
         if let ttEntry = transpositionTable.probe(key), ttEntry.depth >= depth {
             ttMove = ttEntry.bestMove
@@ -153,32 +220,14 @@ final class SearchController {
             ttMove = nil
         }
         
-        // 3. Leaf node: evaluate statically if depth == 0
+        // Leaf node: evaluate statically if depth == 0
         if depth == 0 {
-            if !position.isKingInCheck() {
-                // Check extension, force one more ply to resolve checks
-                return quiescence(position: position, alpha: alpha, beta: beta)
-            }
+            return quiescence(position: position, alpha: alpha, beta: beta, repetitionHistory: &repetitionHistory)
         }
         
         var alphaVar = alpha
         var bestValue = Int.min
         var bestMove: Move? = nil
-        
-        // 4. Generate all legal moves
-        // Also Checkmate or stalemate detection
-        let moves = position.generateAllLegalMoves()
-        if moves.isEmpty {
-            // Checkmate or stalemate
-            if position.isKingInCheck() {
-                // Distance-to-mate correction so deeper mates appear slightly worse
-                let mateScore = evaluator.pieceValues[.king]!
-                let adjustedScore = mateScore - (maxDepth - depth)
-                return -adjustedScore
-            } else {
-                return 0
-            }
-        }
         
         let orderedMoves = moves.sorted { m1, m2 in
             if m1 == ttMove {
@@ -196,7 +245,7 @@ final class SearchController {
             }
         }
         
-        // 5. Iterate through moves
+        // Iterate through moves
         for move in orderedMoves {
             let childPosition = move.resultingBoardState
             var history = repetitionHistory
@@ -219,7 +268,7 @@ final class SearchController {
             if stop { break }
         }
         
-        // 6. Store in transposition table
+        // Store in transposition table
         let flag: TTFlag
         if bestValue <= alpha {
             flag = .upperBound
@@ -231,14 +280,6 @@ final class SearchController {
         
         transpositionTable.store(key, value: bestValue, depth: depth, flag: flag, bestMove: bestMove)
         
-//        let valueRet: Int
-//        if abs(bestValue) >= 60000 {
-//            // Distance-to-mate correction so deeper mates appear slightly worse
-//            let sign = bestValue > 0 ? 1 : -1
-//            valueRet = (60000 - (maxDepth - depth)) * sign
-//        } else {
-//            valueRet = bestValue
-//        }
         return bestValue
     }
     
@@ -254,29 +295,32 @@ final class SearchController {
         }
     }
     
-    private func quiescence(position: BoardState, alpha: Int, beta: Int, qdepth: Int = 8) -> Int {
+    private func quiescence(
+        position: BoardState,
+        alpha: Int,
+        beta: Int,
+        repetitionHistory: inout Set<UInt64>,
+        qdepth: Int = 16,
+    ) -> Int {
         if stop { return 0 }
+        
+        // repetition prevention
+        let currentKey = zobrist.hash(position)
+        if repetitionHistory.contains(currentKey) {
+            return -15
+        }
+        repetitionHistory.insert(currentKey)
+        
+        // depth limit enforcement
         if qdepth <= 0 {
             // Return static evaluation when depth limit is reached
+            repetitionHistory.remove(currentKey)
             return evaluator.evaluate(position: position)
-        }
-        
-        let allmoves = position.generateAllLegalMoves()
-        if allmoves.isEmpty {
-            // Checkmate or stalemate
-            if position.isKingInCheck() {
-                // Distance-to-mate correction so deeper mates appear slightly worse
-                let mateScore = evaluator.pieceValues[.king]!
-                let adjustedScore = mateScore //- (maxDepth - depth)
-                return -adjustedScore
-            } else {
-                return 0
-            }
         }
         
         var alphaVar = alpha
         
-        // 1. Stand-pat evaluation: static evaluation of the current position
+        // static evaluation of the current position
         let standPat = evaluator.evaluate(position: position)
         if standPat >= beta {
             return beta
@@ -285,7 +329,34 @@ final class SearchController {
             alphaVar = standPat
         }
         
-        // 2. Generate captures only
+        // delta pruning
+        let delta = evaluator.pieceValues[.queen]!
+        
+        if standPat + delta < alphaVar {
+            repetitionHistory.remove(currentKey)
+            return standPat
+        }
+        
+        if alphaVar < standPat {
+            alphaVar = standPat
+        }
+        
+        // checkmate/draw evaluation
+        let allmoves = position.generateAllLegalMoves()
+        if allmoves.isEmpty {
+            repetitionHistory.remove(currentKey)
+            // Checkmate or stalemate
+            if position.isKingInCheck() {
+                // Distance-to-mate correction so deeper mates appear slightly worse
+                let mateScore = evaluator.pieceValues[.king]!
+                return -(mateScore - qdepth)
+            } else {
+                return -15
+            }
+        }
+        
+        
+        // Filter for only 'noisy' moves + move ordering
         let moves = allmoves.filter {
             $0.capturedPiece != nil || $0.promotion != nil || position.isKingInCheck()
         }.sorted { m1, m2 in
@@ -295,14 +366,16 @@ final class SearchController {
         }
 
         
-        // 3. Iterate over captures
+        // Iterate over noisy moves
         for move in moves {
             if stop { break } // Stop search if flagged
             
             let childPosition = move.resultingBoardState
-            let score = -quiescence(position: childPosition, alpha: -beta, beta: -alphaVar, qdepth: qdepth-1)
+            var history = repetitionHistory
+            let score = -quiescence(position: childPosition, alpha: -beta, beta: -alphaVar, repetitionHistory: &history, qdepth: qdepth-1)
             
             if score >= beta {
+                repetitionHistory.remove(currentKey)
                 return beta // Beta cutoff
             }
             
@@ -311,7 +384,7 @@ final class SearchController {
             }
             
         }
-        
+        repetitionHistory.remove(currentKey)
         return alphaVar
     }
 
@@ -329,11 +402,15 @@ final class SearchController {
         }
         
         return moves.sorted { m1, m2 in
-            // 1. TT move first
+            // TT move first
             if m1 == ttBestMove { return true }
             if m2 == ttBestMove { return false }
             
-            // 2. Captures using MVV/LVA (SEE optional)
+            if m1.resultingBoardState.isKingInCheck() != m2.resultingBoardState.isKingInCheck() {
+                return m1.resultingBoardState.isKingInCheck() && !m2.resultingBoardState.isKingInCheck()
+            }
+            
+            // Captures using MVV/LVA (SEE optional)
             let m1Score: Int
             let m2Score: Int
             
@@ -361,38 +438,36 @@ final class SearchController {
     
     // Helper function to score moves for QSearch ordering
     private func getQuiescenceMoveScore(_ move: Move, position: BoardState) -> Int {
+        
+        if let promotedPiece = move.promotion {
+            // 1. PROMOTION SCORE (Score 1000 to 9999)
+            // Highly prioritize promotion, especially to Queen.
+            return evaluator.pieceValues[promotedPiece]! + 20000
+        }
+        
         if let targetPiece = move.capturedPiece {
-            // 1. CAPTURE SCORE (Prioritize by SEE)
+            // 2. CAPTURE SCORE (Prioritize by SEE)
             let targetColor: PlayerColor = position.whitePieces.hasPiece(on: move.to) ? .black : .white
             let see = evaluator.staticExchangeEval(square: move.to, position: position, targetPiece: targetPiece, targetColor: targetColor)
-            
-            let perspective = position.playerToMove == .white ? 1 : -1
-            let seeFromCurrentPlayer = see * perspective
-            
-            if seeFromCurrentPlayer > 0 {
+                        
+            if see > 0 {
                 // Winning Captures: Highest Priority (Score > 10000)
-                return 10000 + seeFromCurrentPlayer
+                return 10000 + see
             } else {
                 // Even or Losing Captures: Low Priority (Score < 0)
                 // Use SEE to order blunders among themselves, but keep them below quiet moves.
-                return -10000 + seeFromCurrentPlayer
+                return -10000 + see
             }
-        }
-        
-        if let promotedPiece = move.promotion {
-            // 2. PROMOTION SCORE (Score 1000 to 9999)
-            // Highly prioritize promotion, especially to Queen.
-            return evaluator.pieceValues[promotedPiece]! * 10
         }
         
         // 3. QUIET CHECK RESOLUTION MOVES (Score 0)
         // These include any non-capture move required to get out of check.
         if position.isKingInCheck() {
-            return 0 // Neutral priority
+            return 1 // Neutral priority
         }
         
         // This should generally not be reached in the filtered list unless it's a quiet move
         // filtered in only because of the 'isKingInCheck()' condition.
-        return -20000 // Lowest priority
+        return 0 // Lowest priority
     }
 }
