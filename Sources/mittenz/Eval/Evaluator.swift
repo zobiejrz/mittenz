@@ -25,41 +25,50 @@ final class Evaluator {
     }
     
     // MARK: - Evaluate
-    public func evaluate(position: BoardState) -> Int {
-        return evaluateStatic(position: position)
+    public func evaluate(position: BoardState, nosee: Bool = false) -> Int {
+        return evaluateStatic(position: position, nosee: nosee)
     }
     
     // MARK: - Static evaluation
-    private func evaluateStatic(position: BoardState) -> Int {
+    private func evaluateStatic(position: BoardState, nosee: Bool = false) -> Int {
         
         // Material + piece-square evaluation
         let material = materialBalance(position: position)
         let pieceSquareScore = evaluatePieceSquares(position: position)
         
         var seePenalty = 0
-        
-        // Iterate over all squares to check if any pieces are attacked
-        for sq in Square.allCases {
-            guard let piece = position.whatPieceIsOn(sq) else { continue }
-            let color = position.whitePieces.hasPiece(on: sq) ? PlayerColor.white : .black
-            
-            let oppositeColor = color == .white ? PlayerColor.black : .white
-            let attackers = position.attackersTo(sq, color: oppositeColor, occupancy: position.allPieces)
-            if attackers == .empty { continue }
-            
-            // Compute SEE: net gain/loss for the piece if captured
-            let multiplier = position.playerToMove == oppositeColor ? 1 : -1
-            let see = staticExchangeEval(square: sq, position: position, targetPiece: piece, targetColor: color)
-            
-            seePenalty += multiplier * see
+        if nosee {
+            // Iterate over all squares to check if any pieces are attacked
+            for sq in Square.allCases {
+                guard let piece = position.whatPieceIsOn(sq) else { continue }
+                let color = position.whitePieces.hasPiece(on: sq) ? PlayerColor.white : .black
+                
+                let oppositeColor = color == .white ? PlayerColor.black : .white
+                let attackers = position.attackersTo(sq, color: oppositeColor, occupancy: position.allPieces)
+                if attackers == .empty { continue }
+                
+                // Compute SEE: net gain/loss for the piece if captured
+                let multiplier = position.playerToMove == oppositeColor ? 1 : -1
+                let see = staticExchangeEval(square: sq, position: position, targetPiece: piece, targetColor: color)
+                
+                seePenalty += multiplier * see
+            }
         }
         
-        return material + pieceSquareScore + seePenalty
+        let total = material + pieceSquareScore + seePenalty
+//        if position.plyNumber == 7 {
+//            print(position.boardString())
+//            print("\teval is \(material) + \(pieceSquareScore) + \(seePenalty) = \(total)")
+//        }
+        
+        return total
     }
     
     // MARK: - Static Exchange Evaluation
     func staticExchangeEval(square: Square, position: BoardState, targetPiece: PieceType, targetColor: PlayerColor) -> Int {
-        var occ = position.allPieces  // Assume this exists; otherwise derive from BoardState
+//        guard targetPiece != .king else { return 0 }
+        
+        var occ = position.allPieces & ~Bitboard.squareMask(square)
         
         // Initialize gain array
         var gains: [Int] = []
@@ -79,11 +88,11 @@ final class Evaluator {
                 break  // No more attackers; end of sequence
             }
             
-            if currentCapturedPieceValue != pieceValues[.king]! {
-                // Capture the current piece
+//            if currentCapturedPieceValue != pieceValues[.king]! {
                 gains.append(currentCapturedPieceValue)
-                break
-            }
+//                break
+//            }
+            
             // The next piece to be caputered is the current attacker
             currentCapturedPieceValue = pieceValues[attackerPiece]!
             
@@ -106,7 +115,7 @@ final class Evaluator {
         }
         
         // Return net gain for initial attacker
-         return score //(targetColor == .white) ? -score : score
+         return score
     }
     
     // MARK: - Piece-square table evaluation

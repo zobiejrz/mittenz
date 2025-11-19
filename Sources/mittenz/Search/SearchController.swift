@@ -51,10 +51,6 @@ final class SearchController {
         var bestScore = Int.min
         var currentBestMove: Move? = nil
         var bestMoveSoFar: Move? = nil
-        
-        if board.plyNumber == 113 {
-            print(board.boardString())
-        }
 
         for depth in 1...maxDepth {
             if stop { break }
@@ -321,22 +317,21 @@ final class SearchController {
         var alphaVar = alpha
         
         // static evaluation of the current position
-        let standPat = evaluator.evaluate(position: position)
+        let standPat = evaluator.evaluate(position: position, nosee: true)
+        
+        // stand-pat beta cutoff
         if standPat >= beta {
             return beta
-        }
-        if alphaVar < standPat {
-            alphaVar = standPat
         }
         
         // delta pruning
         let delta = evaluator.pieceValues[.queen]!
-        
-        if standPat + delta < alphaVar {
+        if !position.isKingInCheck() && standPat + delta < alphaVar {
             repetitionHistory.remove(currentKey)
             return standPat
         }
         
+        // updata alpha with stand-pat if it is bssf
         if alphaVar < standPat {
             alphaVar = standPat
         }
@@ -417,18 +412,18 @@ final class SearchController {
             if let captured = m1.capturedPiece {
                 let attacker = m1.piece
                 m1Score = (evaluator.pieceValues[captured]! * 10) - (evaluator.pieceValues[attacker]!)
-            } else if m1.promotion != nil {
+            } /*else if m1.promotion != nil {
                 m1Score = evaluator.pieceValues[m1.promotion!]!
-            } else {
+            }*/ else {
                 m1Score = 0
             }
             
             if let captured = m2.capturedPiece {
                 let attacker = m2.piece
                 m2Score = (evaluator.pieceValues[captured]! * 10) - (evaluator.pieceValues[attacker]!)
-            } else if m2.promotion != nil {
+            } /*else if m2.promotion != nil {
                 m2Score = evaluator.pieceValues[m2.promotion!]!
-            } else {
+            }*/ else {
                 m2Score = 0
             }
             

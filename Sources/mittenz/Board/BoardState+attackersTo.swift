@@ -12,17 +12,17 @@ extension BoardState {
     func attackersTo(_ sq: Square, color: PlayerColor, occupancy: Bitboard) -> Bitboard {
         // For pawns, knights, kings, they are independent of blockers (pawns depend on direction)
         // For sliders (bishop/rook/queen) you must compute sliding attacks using occupancy.
-        var res: Bitboard = 0
+        var res: Bitboard = .empty
         
         // Pawns: pawn-attacks depend on color
         if color == .white {
-            res |= (Bitboard.squareMask(sq).neShift() | Bitboard.squareMask(sq).nwShift()) & (self.whitePawns & occupancy)
+            res |= (Bitboard.squareMask(sq).neShift() | Bitboard.squareMask(sq).nwShift()) & self.whitePawns
         } else {
-            res |= (Bitboard.squareMask(sq).seShift() | Bitboard.squareMask(sq).swShift()) & (self.blackPawns & occupancy)
+            res |= (Bitboard.squareMask(sq).seShift() | Bitboard.squareMask(sq).swShift()) & self.blackPawns
         }
         
         // Knights
-        res |= Square.generateKnightMoves(sq) & ((color == .white ? self.whiteKnights : self.blackKnights) & occupancy)
+        res |= Square.generateKnightMoves(sq) & (color == .white ? self.whiteKnights : self.blackKnights)
         
         // Kings
         res |= (
@@ -30,20 +30,20 @@ extension BoardState {
             Bitboard.squareMask(sq).eShift() | Bitboard.squareMask(sq).seShift() |
             Bitboard.squareMask(sq).sShift() | Bitboard.squareMask(sq).swShift() |
             Bitboard.squareMask(sq).wShift() | Bitboard.squareMask(sq).nwShift()
-        ) & ((color == .white ? self.whiteKing : self.blackKing) & occupancy)
+        ) & (color == .white ? whiteKing : blackKing)
         
         // Bishops
         let bishopAttackers = Square.slidingBishopAttacks(at: sq, blockers: occupancy) & (color == .white ? self.whiteBishops : self.blackBishops)
-        res |= (bishopAttackers & occupancy)
+        res |= bishopAttackers
         
         // Rooks
-        let rookAttackers = Square.slidingRookAttacks(at: sq, blockers: occupancy) & (color == .white ? self.whiteRooks  : self.blackRooks)
-        res |= (rookAttackers & occupancy)
+        let rookAttackers = Square.slidingRookAttacks(at: sq, blockers: occupancy) & (color == .white ? self.whiteRooks : self.blackRooks)
+        res |= rookAttackers
         
         // Queens
-        let queenAttackers = Square.slidingQueenAttacks(at: sq, blockers: occupancy) & (color == .white ? self.whiteQueens  : self.blackQueens)
-        res |= (queenAttackers & occupancy)
+        let queenAttackers = Square.slidingQueenAttacks(at: sq, blockers: occupancy) & (color == .white ? self.whiteQueens : self.blackQueens)
+        res |= queenAttackers
         
-        return res
+        return res & occupancy
     }
 }

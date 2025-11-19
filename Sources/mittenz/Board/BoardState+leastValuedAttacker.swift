@@ -15,6 +15,7 @@ extension BoardState {
         
         let piece: PieceType?
         let square: Square?
+        
         // check pieces by increasing value
         if color == .white {
             if let (idx, _) = (attackersBB & self.whitePawns).popLSB() {
@@ -33,7 +34,7 @@ extension BoardState {
                 piece = .queen
                 square = Square(rawValue: idx)!
             } else if let (idx, _) = (attackersBB & self.whiteKing).popLSB() {
-                if attackersBB & ~self.whiteKing == .empty {
+                if attackersBB & ~self.whiteKing == .empty { // verify that capturing with the king is legal
                     piece = .king
                     square = Square(rawValue: idx)!
                 } else {
@@ -61,7 +62,7 @@ extension BoardState {
                 piece = .queen
                 square = Square(rawValue: idx)!
             } else if let (idx, _) = (attackersBB & self.blackKing).popLSB() {
-                if attackersBB & ~self.blackKing == .empty {
+                if attackersBB & ~self.blackKing == .empty { // verify that capturing with the king is legal
                     piece = .king
                     square = Square(rawValue: idx)!
                 } else {
