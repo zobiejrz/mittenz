@@ -7,14 +7,16 @@
 
 import zChessKit
 
+@available(iOS 13.0.0, *)
+@available(macOS 10.15.0, *)
 public final class UCILoop {
-    private weak var engine: Engine?
+    private var engine: Engine
     
     public init(engine: Engine) {
         self.engine = engine
     }
     
-    public func run() {
+    public func run() async {
         print("Mittenz engine ready. (UCI loop)")
         
         while let line = readLine() {
@@ -31,24 +33,20 @@ public final class UCILoop {
                 print("readyok")
                 
             case "ucinewgame":
-                engine?.setFEN("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1") // reset board
+                engine.setFEN("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1") // reset board
                 
             case "position":
                 parsePosition(tokens: Array(tokens.dropFirst()))
                 
             case "go":
-                parseGo(tokens: Array(tokens.dropFirst()))
+                await parseGo(tokens: Array(tokens.dropFirst()))
                 
             case "stop":
-                engine?.stopSearch() // implement stop flag in engine
+                engine.stopSearch() // implement stop flag in engine
                 
             case "d":
-                if let e = engine {
-                    print(e.currentState().boardString())
-                    print("\nFEN: \(e.currentState().getFEN())")
-                } else {
-                    print("No Engine :(")
-                }
+                print(engine.currentState().boardString())
+                print("\nFEN: \(engine.currentState().getFEN())")
                 
             case "quit":
                 return
@@ -88,14 +86,14 @@ public final class UCILoop {
             }
         }
         
-        engine?.setFEN(fen)
+        engine.setFEN(fen)
         for move in moves {
-            engine?.makeMoveFromUCI(move)
+            engine.makeMoveFromUCI(move)
         }
     }
     
     // MARK: - Go Parsing
-    private func parseGo(tokens: [Substring]) {
+    private func parseGo(tokens: [Substring]) async {
         var timeLimit: TimeLimit = .infinite
         let skill: SkillSetting = SkillSetting(maxCentipawnLoss: 0)
         
@@ -124,18 +122,17 @@ public final class UCILoop {
         }
         
         // Run search
-        if let engine = engine,
-           let bestMove = engine.searchBestMove(timeLimit: timeLimit, skill: skill) {
+        if let bestMove = await engine.searchBestMove(timeLimit: timeLimit, skill: skill) {
             print("bestmove \(bestMove.uci)")
         }
     }
     
     public func playMove(_ move: Move) {
-        engine?.makeMoveFromUCI(move.uci)
+        engine.makeMoveFromUCI(move.uci)
     }
     
     /// Apply a move from a UCI string (e.g., "e2e4")
     public func playMove(_ uci: String) {
-        engine?.makeMoveFromUCI(uci)
+        engine.makeMoveFromUCI(uci)
     }
 }

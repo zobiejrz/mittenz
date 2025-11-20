@@ -8,6 +8,8 @@
 import Foundation
 import zChessKit
 
+@available(iOS 13.0.0, *)
+@available(macOS 10.15.0, *)
 public final class Engine {
     
     // MARK: - Internal State
@@ -41,6 +43,7 @@ public final class Engine {
     public func setFEN(_ fen: String) {
         if let newBoard = BoardState.fromFEN(fen) {
             self.board = newBoard
+            self.search.setBoard(newBoard)
         } else {
             print("Engine: Invalid FEN string, keeping previous position.")
         }
@@ -52,7 +55,7 @@ public final class Engine {
     
     // MARK: - Search
     
-    public func searchBestMove(timeLimit: TimeLimit, skill: SkillSetting? = nil) -> Move? {
+    public func searchBestMove(timeLimit: TimeLimit, skill: SkillSetting? = nil) async -> Move? {
         resetStopFlag()
         let skillSetting = skill ?? SkillSetting(maxCentipawnLoss: 0)
         let move = self.search.bestMove(
@@ -86,9 +89,9 @@ public final class Engine {
     
     // MARK: - UCI Protocol (optional)
     
-    public func uciLoop() {
+    public func uciLoop() async {
         let uci = UCILoop(engine: self)
-        uci.run()
+        await uci.run()
     }
     
     func makeMoveFromUCI(_ uci: String) {
@@ -98,7 +101,7 @@ public final class Engine {
             // Apply the move
             board = move.resultingBoardState
         } else {
-//            Logger.log("Warning: invalid UCI move '\(uci)' for current position")
+            print("Warning: invalid UCI move '\(uci)' for current position")
         }
     }
     
