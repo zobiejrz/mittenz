@@ -42,6 +42,14 @@ public final class UCILoop {
             case "stop":
                 engine?.stopSearch() // implement stop flag in engine
                 
+            case "d":
+                if let e = engine {
+                    print(e.currentState().boardString())
+                    print("\nFEN: \(e.currentState().getFEN())")
+                } else {
+                    print("No Engine :(")
+                }
+                
             case "quit":
                 return
                 
